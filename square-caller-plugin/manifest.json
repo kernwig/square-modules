@@ -1,0 +1,9 @@
+{
+  "id": "square-caller",
+  "name": "Square Caller",
+  "version": "0.1.0",
+  "minAppVersion": "1.4.0",
+  "description": "Live square-dance calling aid: pick a start formation, chain modules by end->start, toggle properties, keyboard-driven big-screen UI.",
+  "author": "Adam Fanello",
+  "isDesktopOnly": true
+}
