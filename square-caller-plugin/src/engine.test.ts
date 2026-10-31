@@ -35,14 +35,14 @@ test("auto-follow advances start to selected module end", () => {
   assert.equal(e.filters.start, "lines");
 });
 
-test("end:home filter clears when selecting a start:home module", () => {
+test("end filter persists through selection like any other filter", () => {
   const f = defaultFilterState();
   f.end = "home";
   f.start = "home";
   const e = new Engine(deck, f, 1);
   const d = deck.find((m) => m.path === "d")!; // start home, end home
   e.selectModule(d);
-  assert.equal(e.filters.end, null, "end:home should be disabled");
+  assert.equal(e.filters.end, "home", "end:home is not auto-cleared");
   assert.equal(e.filters.start, "home", "auto-follow sets start to end=home");
 });
 
@@ -87,6 +87,49 @@ test("author filter exact match", () => {
   const e = new Engine(withAuthors, f, 1);
   const paths = e.snapshot().next.filter(Boolean).map((m) => (m as Module).path);
   assert.deepEqual(paths, ["x"]);
+});
+
+const singerDeck: Module[] = [
+  mod("plain1", { start: "home", end: "home", level: "ms" }),
+  mod("plain2", { start: "lines", end: "home", level: "ms" }),
+  mod("fig", { start: "home", end: "home", level: "ms", singer: "corner-progression" }),
+  mod("brk", { start: "home", end: "home", level: "ms", singer: "break" }),
+  mod("rh", { start: "home", end: "home", level: "ms", singer: "r-h-lady" }),
+];
+
+test("singer default (null) matches only modules without the property", () => {
+  const f = defaultFilterState();
+  assert.equal(f.singer, null, "default singer filter is null");
+  const e = new Engine(singerDeck, f, 1);
+  const paths = e.snapshot().next.filter(Boolean).map((m) => (m as Module).path).sort();
+  assert.deepEqual(paths, ["plain1", "plain2"]);
+});
+
+test("singer filter selects an exact value", () => {
+  const f = defaultFilterState();
+  f.singer = "corner-progression";
+  const e = new Engine(singerDeck, f, 1);
+  const paths = e.snapshot().next.filter(Boolean).map((m) => (m as Module).path);
+  assert.deepEqual(paths, ["fig"]);
+});
+
+test("singer filter 'break' excludes figures and plain modules", () => {
+  const f = defaultFilterState();
+  f.singer = "break";
+  const e = new Engine(singerDeck, f, 1);
+  const paths = e.snapshot().next.filter(Boolean).map((m) => (m as Module).path);
+  assert.deepEqual(paths, ["brk"]);
+});
+
+test("setSinger sets the value and does not toggle off on repeat", () => {
+  const f = defaultFilterState();
+  const e = new Engine(singerDeck, f, 1);
+  e.setSinger("break");
+  assert.equal(e.filters.singer, "break");
+  e.setSinger("break");
+  assert.equal(e.filters.singer, "break", "select does not toggle off");
+  e.setSinger(null);
+  assert.equal(e.filters.singer, null);
 });
 
 test("selectTop switches selected card and re-applies auto-follow", () => {

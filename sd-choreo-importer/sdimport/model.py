@@ -47,6 +47,9 @@ class ModuleRecord:
     beats: Optional[int] = None
     trick: bool = False
     unvalidated: bool = False
+    # Singing-call kind: "corner-progression" (figure) or "break". Omitted for
+    # non-singing modules.
+    singer: Optional[str] = None
 
     # Optional free-text comment appended to the body after a blank line.
     comment: Optional[str] = None

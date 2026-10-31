@@ -86,6 +86,23 @@ def test_mapping_hex_excluded():
     assert m is not None and m.excluded is True
 
 
+def test_mapping_singer_values():
+    figure_corner = map_seqtype("Singing call (Corner progression)")
+    assert figure_corner.folder == "Singer-figure"
+    assert figure_corner.singer == "corner-progression"
+
+    figure_rh = map_seqtype("Singing call (R-H Lady progression)")
+    assert figure_rh.folder == "Singer-figure"
+    assert figure_rh.singer == "rhlady-progression"
+
+    brk = map_seqtype("Singing break")
+    assert brk.folder == "Singer-break"
+    assert brk.singer == "break"
+
+    # Non-singing types carry no singer value.
+    assert map_seqtype("Static Set \u2794 Resolve").singer is None
+
+
 def test_excluded_record_raises():
     html = (
         '<div id="pageheader">Six Couples (Hex)</div>'

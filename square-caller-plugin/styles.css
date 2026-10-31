@@ -17,12 +17,49 @@
 
 /* ---- filter bar ---- */
 .sqc-filters {
+  /* Anchor for the expand chevron. The right padding keeps chips clear of the
+     ? button and the chevron column; min-height keeps the chevron below the ?
+     even when the bar is a single row. flex-shrink must be 0: the explicit
+     min-height replaces the flex item's content-based minimum, so without it
+     the grid squeezes the bar and wrapped rows overflow onto the cards. */
+  flex: 0 0 auto;
+  position: relative;
+  box-sizing: border-box;
+  min-height: 74px;
+  padding-right: 50px;
   display: flex;
   flex-wrap: wrap;
   gap: 8px 18px;
   align-items: center;
+  align-content: flex-start;
   padding-bottom: 6px;
   border-bottom: 2px solid var(--background-modifier-border);
+}
+/* Same width as the ? button and offset so their centers line up. */
+.sqc-expand {
+  position: absolute;
+  right: 2px;
+  bottom: 6px;
+  width: 38px;
+  height: 26px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+.sqc-expand:hover {
+  background: var(--background-modifier-hover);
+  color: var(--interactive-accent);
+}
+.sqc-expand .svg-icon {
+  width: 22px;
+  height: 22px;
 }
 .sqc-strip {
   display: flex;
@@ -32,7 +69,7 @@
 .sqc-strip-label {
   font-weight: 700;
   text-transform: uppercase;
-  font-size: 13px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   opacity: 0.7;
 }
@@ -42,8 +79,8 @@
   flex-wrap: wrap;
 }
 .sqc-chip {
-  font-size: 17px;
-  padding: 6px 14px;
+  font-size: 15px;
+  padding: 5px 12px;
   border-radius: 8px;
   border: 2px solid var(--background-modifier-border);
   background: var(--background-secondary);
@@ -77,9 +114,39 @@
   border-color: #2a5db0;
 }
 .sqc-select {
-  font-size: 16px;
-  padding: 5px 8px;
+  font-size: 14px;
+  padding: 4px 8px;
   border-radius: 6px;
+}
+.sqc-search-box {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+.sqc-search {
+  font-size: 14px;
+  padding: 4px 26px 4px 8px; /* right padding leaves room for the × */
+  border-radius: 6px;
+  width: 14em;
+}
+.sqc-search-clear {
+  position: absolute;
+  right: 3px;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}
+.sqc-search-clear:hover {
+  background: var(--background-modifier-hover);
+  color: var(--text-normal);
 }
 .sqc-range-dash {
   opacity: 0.6;
@@ -220,6 +287,7 @@
   min-height: 1em;
 }
 .sqc-pager {
+  flex: 0 0 auto;
   text-align: center;
   font-size: 14px;
   opacity: 0.7;
@@ -289,4 +357,23 @@
   white-space: nowrap;
   width: 1%;
   padding-right: 18px !important;
+}
+/* Each key is its own boxed keycap, so no separator characters are needed. */
+.sqc-kbd {
+  display: inline-block;
+  min-width: 1.8em;
+  margin-right: 4px;
+  padding: 1px 6px;
+  border: 1px solid var(--background-modifier-border);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--background-secondary);
+  font-family: var(--font-monospace);
+  font-weight: 700;
+  text-align: center;
+}
+.sqc-help-note {
+  padding-top: 10px !important;
+  font-style: italic;
+  opacity: 0.8;
 }

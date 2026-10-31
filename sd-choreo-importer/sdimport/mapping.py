@@ -18,6 +18,9 @@ class SeqMapping:
     folder: str
     prefix: str = ""
     excluded: bool = False
+    # Singing-call kind, written to the `singer` frontmatter property. ``None``
+    # for non-singing types (the property is then omitted).
+    singer: Optional[str] = None
 
 
 # Sentinel for excluded types (Six Couples Hex).
@@ -38,9 +41,9 @@ SEQTYPE_MAP: dict[str, SeqMapping] = {
     "zero (facing lines)": SeqMapping("lines", "lines", "Zeros"),
     "zero (parallel waves)": SeqMapping("waves", "waves", "Zeros"),
     "zero (facing couples)": SeqMapping("box", "box", "Zeros"),
-    "singing call (corner progression)": SeqMapping("home", "home", "Singer-figure"),
-    "singing call (r-h lady progression)": SeqMapping("home", "home", "Singer-figure"),
-    "singing break": SeqMapping("home", "home", "Singer-break"),
+    "singing call (corner progression)": SeqMapping("home", "home", "Singer-figure", singer="corner-progression"),
+    "singing call (r-h lady progression)": SeqMapping("home", "home", "Singer-figure", singer="rhlady-progression"),
+    "singing break": SeqMapping("home", "home", "Singer-break", singer="break"),
     "stir the bucket": SeqMapping("home", "home", "Patter-stir"),
     "two couples (facing couples)": SeqMapping("home", "home", "Two-Couples"),
     "six couples (rectangle)": SeqMapping("home", "home", "Rectangle"),

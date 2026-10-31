@@ -5,7 +5,7 @@ A standalone tool that detects the square-dance **program level**
 by recognizing the calls in its body, then reconciles the file's `level`
 frontmatter and folder with the detected level.
 
-It is independent of `tools/sd-choreo-importer` — it only reads/edits the
+It is independent of `square-modules/sd-choreo-importer` — it only reads/edits the
 module `.md` files in the vault.
 
 ## Why

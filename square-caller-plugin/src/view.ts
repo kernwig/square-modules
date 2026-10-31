@@ -4,7 +4,7 @@
  * vault; nothing about the formation/boolean vocabulary is hard-coded.
  */
 
-import { ItemView, WorkspaceLeaf, Notice, Modal, App, TFile, setIcon } from "obsidian";
+import { ItemView, WorkspaceLeaf, Notice, Modal, App, TFile, setIcon, setTooltip } from "obsidian";
 import { Module, asBoolean, getEnd } from "./model.ts";
 import { Engine } from "./engine.ts";
 import { FilterState } from "./filters.ts";
@@ -15,14 +15,44 @@ import type SquareCallerPlugin from "./main.ts";
 
 export const VIEW_TYPE = "square-caller-view";
 
-/** Letter hotkeys mapping to a formation value. Lowercase sets `start`,
- *  uppercase (shift) sets `end`. */
-const FORMATION_HOTKEYS: Record<string, string> = {
-  h: "home",
-  l: "lines",
-  p: "line-partner",
-  b: "box",
-  c: "box-corner",
+/**
+ * Formation hotkeys: [start key, end key, formation]. The start key sets the
+ * START filter, the end key (its Shift version) sets END. Listed explicitly
+ * because Shift+8 isn't a lowercase/uppercase pair; it is matched by physical
+ * key (see `pressedKey`) so it works on any keyboard layout. The help screen is
+ * generated from this table.
+ */
+const FORMATION_KEYS: [startKey: string, endKey: string, formation: string][] = [
+  ["h", "H", "home"],
+  ["l", "L", "lines"],
+  ["p", "P", "line-partner"],
+  ["b", "B", "box"],
+  ["c", "C", "box-corner"],
+  ["8", "Shift+8", "8chain"],
+  ["w", "W", "waves"],
+];
+
+/**
+ * The key name used to look up FORMATION_KEYS. Shift + the top-row 8 key is
+ * reported as "Shift+8" by physical key, whatever character the layout types
+ * (`*` on US keyboards). Every other key uses the typed character.
+ */
+function pressedKey(e: KeyboardEvent): string {
+  if (e.code === "Digit8" && e.shiftKey) return "Shift+8";
+  return e.key;
+}
+
+/** Hover tooltips for each filter label, keyed by the label text. */
+const LABEL_TOOLTIPS: Record<string, string> = {
+  Start: "Show only modules that begin in this formation. Click a chip to filter; click the active one to clear.",
+  End: "Show only modules that end in this formation. Click a chip to filter; click the active one to clear.",
+  Level: "Limit to modules within this program-level range (min–max).",
+  Difficulty: "Limit to modules within this difficulty range (min–max).",
+  Author: "Show only modules by this author. Leave as \u201cany author\u201d for no filter.",
+  Singer: "Filter singing-call modules by kind. \u201cno\u201d matches modules that are not singing calls.",
+  Search:
+    "Find modules whose calls contain every word typed (any order). Use * as a wildcard within a line, e.g. walk*dodge. Shortcut: / to jump here; Enter or Esc to leave.",
+  Flags: "Require each toggled-on flag to be true on the module.",
 };
 
 export class SquareCallerView extends ItemView {
@@ -31,9 +61,12 @@ export class SquareCallerView extends ItemView {
   private startValues: string[] = [];
   private endValues: string[] = [];
   private authorValues: string[] = [];
+  private singerValues: string[] = [];
   private booleanKeys: string[] = [];
   private highlightLine = 0;
   private lastHighlightDir = 1;
+  /** Set by the `/` shortcut: next render shows and focuses the search box. */
+  private focusSearchOnRender = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SquareCallerPlugin) {
     super(leaf);
@@ -77,6 +110,9 @@ export class SquareCallerView extends ItemView {
     this.authorValues = distinctValues(this.modules, "author").sort((a, b) =>
       a.localeCompare(b),
     );
+    this.singerValues = distinctValues(this.modules, "singer").sort((a, b) =>
+      a.localeCompare(b),
+    );
     this.booleanKeys = props.booleanKeys;
     // Make sure each discovered boolean has an entry in the filter state.
     for (const k of this.booleanKeys) {
@@ -112,17 +148,18 @@ export class SquareCallerView extends ItemView {
     const key = raw.toLowerCase();
     let handled = true;
 
-    // Letter formation hotkeys: lowercase sets `start`, uppercase sets `end`.
-    // `h`/`H` map to the "home" formation like the others.
-    if (FORMATION_HOTKEYS[key]) {
-      const value = FORMATION_HOTKEYS[key];
-      const isUpper = raw !== raw.toLowerCase() && raw === raw.toUpperCase();
-      if (isUpper) {
-        if (this.endValues.includes(value)) this.engine.setEnd(value);
-        else handled = false;
+    // Formation hotkeys: a start key sets `start`, its end key sets `end`.
+    // Matched on the exact key (case matters) so `l` and `L` differ.
+    const pressed = pressedKey(e);
+    const startHit = FORMATION_KEYS.find(([s]) => s === pressed);
+    const endHit = FORMATION_KEYS.find(([, en]) => en === pressed);
+    if (startHit || endHit) {
+      if (startHit && this.startValues.includes(startHit[2])) {
+        this.engine.setStart(startHit[2]);
+      } else if (endHit && this.endValues.includes(endHit[2])) {
+        this.engine.setEnd(endHit[2]);
       } else {
-        if (this.startValues.includes(value)) this.engine.setStart(value);
-        else handled = false;
+        handled = false;
       }
       if (handled) {
         e.preventDefault();
@@ -133,6 +170,18 @@ export class SquareCallerView extends ItemView {
     }
 
     switch (key) {
+      case "f":
+        // Switch the filter bar between its short and long views.
+        this.plugin.settings.filtersExpanded = !this.plugin.settings.filtersExpanded;
+        break;
+      case "/": {
+        // Jump to the search box. Rendering with this flag set also reveals the
+        // box in the short filter view.
+        e.preventDefault();
+        this.focusSearchOnRender = true;
+        this.render();
+        return;
+      }
       case "?":
         this.openHelp();
         break;
@@ -165,11 +214,6 @@ export class SquareCallerView extends ItemView {
       case "a":
         this.engine.toggleAutoFollow();
         new Notice(`Auto-follow ${this.filters.autoFollow ? "on" : "off"}`);
-        break;
-      case "r":
-        // Quick single-key for the common end:home filter.
-        if (this.endValues.includes("home")) this.engine.setEnd("home");
-        else handled = false;
         break;
       default:
         handled = false;
@@ -205,12 +249,31 @@ export class SquareCallerView extends ItemView {
   private render(): void {
     const root = this.containerEl.children[1] as HTMLElement;
     const hadFocus = document.activeElement === root || root.contains(document.activeElement);
+    // The search box is rebuilt on every render; remember focus + caret so
+    // typing isn't interrupted.
+    const active = document.activeElement;
+    const searchCaret =
+      active instanceof HTMLInputElement && active.hasClass("sqc-search")
+        ? [active.selectionStart ?? active.value.length, active.selectionEnd ?? active.value.length]
+        : null;
     root.empty();
     root.addClass("sqc-root");
     this.renderHelpButton(root);
-    this.renderFilters(root);
+    const focusSearch = this.focusSearchOnRender;
+    this.focusSearchOnRender = false;
+    this.renderFilters(root, searchCaret !== null || focusSearch);
     this.renderGrid(root);
-    if (hadFocus) root.focus();
+    const input = root.querySelector<HTMLInputElement>("input.sqc-search");
+    if (focusSearch && input) {
+      // `/` shortcut: focus and select so typing replaces the query.
+      input.focus();
+      input.select();
+    } else if (searchCaret && input) {
+      input.focus();
+      input.setSelectionRange(searchCaret[0], searchCaret[1]);
+    } else if (hadFocus) {
+      root.focus();
+    }
     // Keep the highlighted line visible along with its neighbors (one line of
     // context above and below, when they exist). Scrolling both neighbors into
     // view with block:"nearest" guarantees the highlighted line between them
@@ -236,8 +299,8 @@ export class SquareCallerView extends ItemView {
     const btn = root.createEl("button", {
       cls: "sqc-help-btn",
       text: "?",
-      attr: { "aria-label": "Help", title: "Help (?)" },
     });
+    setTooltip(btn, "Help (?)");
     btn.onclick = () => this.openHelp();
   }
 
@@ -245,28 +308,51 @@ export class SquareCallerView extends ItemView {
     new HelpModal(this.app).open();
   }
 
-  private renderFilters(root: HTMLElement): void {
-    const bar = root.createDiv({ cls: "sqc-filters" });
+  private renderFilters(root: HTMLElement, searchFocused: boolean): void {
+    const expanded = this.plugin.settings.filtersExpanded;
+    const bar = root.createDiv({ cls: "sqc-filters" + (expanded ? " is-expanded" : " is-collapsed") });
 
+    // Always shown. Auto-follow sits right after End in both views.
     this.renderChipStrip(bar, "Start", this.startValues, this.filters.start, (v) => {
       this.engine.setStart(v);
     });
     this.renderChipStrip(bar, "End", this.endValues, this.filters.end, (v) => {
       this.engine.setEnd(v);
     });
+    this.renderAutoFollow(bar, expanded);
 
-    this.renderRange(bar, "Level", LEVEL_ORDER, this.filters.level, this.levelValues());
-    this.renderRange(
-      bar,
-      "Difficulty",
-      DIFFICULTY_ORDER,
-      this.filters.difficulty,
-      this.difficultyValues(),
-    );
+    // In the short view, each of these still shows while it holds a value.
+    if (expanded || this.filters.author !== null) this.renderAuthorSelect(bar);
+    if (expanded || this.filters.singer !== null) this.renderSingerSelect(bar);
+    if (expanded || this.filters.search !== "" || searchFocused) this.renderSearch(bar);
 
-    this.renderAuthorSelect(bar);
-    this.renderBooleanFilters(bar);
-    this.renderAutoFollow(bar);
+    // Long view only.
+    if (expanded) {
+      this.renderRange(bar, "Level", LEVEL_ORDER, this.filters.level, this.levelValues());
+      this.renderRange(
+        bar,
+        "Difficulty",
+        DIFFICULTY_ORDER,
+        this.filters.difficulty,
+        this.difficultyValues(),
+      );
+      this.renderBooleanFilters(bar);
+    }
+
+    // Positioned by CSS at the bar's bottom-right, aligned under the ? button.
+    this.renderExpandToggle(bar, expanded);
+  }
+
+  /** Chevron that switches the filter bar between its short and long views. */
+  private renderExpandToggle(parent: HTMLElement, expanded: boolean): void {
+    const b = parent.createEl("button", { cls: "sqc-expand" });
+    setIcon(b, expanded ? "chevron-up" : "chevron-down");
+    setTooltip(b, expanded ? "Show only the main filters (f)" : "Show all filters (f)");
+    b.onclick = async () => {
+      this.plugin.settings.filtersExpanded = !expanded;
+      await this.persist();
+      this.render();
+    };
   }
 
   private levelValues(): string[] {
@@ -283,6 +369,13 @@ export class SquareCallerView extends ItemView {
     if (range.max === null) range.max = available[available.length - 1];
   }
 
+  /** Create a filter-strip label with its hover tooltip (if one is defined). */
+  private labelEl(wrap: HTMLElement, label: string): void {
+    const span = wrap.createSpan({ cls: "sqc-strip-label", text: label });
+    const tip = LABEL_TOOLTIPS[label];
+    if (tip) setTooltip(span, tip);
+  }
+
   private renderChipStrip(
     parent: HTMLElement,
     label: string,
@@ -291,7 +384,7 @@ export class SquareCallerView extends ItemView {
     onClick: (v: string) => void,
   ): void {
     const wrap = parent.createDiv({ cls: "sqc-strip" });
-    wrap.createSpan({ cls: "sqc-strip-label", text: label });
+    this.labelEl(wrap, label);
     const chips = wrap.createDiv({ cls: "sqc-chips" });
     for (const v of values) {
       const b = chips.createEl("button", {
@@ -314,7 +407,7 @@ export class SquareCallerView extends ItemView {
     available: string[],
   ): void {
     const wrap = parent.createDiv({ cls: "sqc-strip" });
-    wrap.createSpan({ cls: "sqc-strip-label", text: label });
+    this.labelEl(wrap, label);
     const mk = (which: "min" | "max") => {
       const sel = wrap.createEl("select", { cls: "sqc-select" });
       for (const v of available) sel.createEl("option", { text: v, value: v });
@@ -333,7 +426,7 @@ export class SquareCallerView extends ItemView {
 
   private renderAuthorSelect(parent: HTMLElement): void {
     const wrap = parent.createDiv({ cls: "sqc-strip" });
-    wrap.createSpan({ cls: "sqc-strip-label", text: "Author" });
+    this.labelEl(wrap, "Author");
     const sel = wrap.createEl("select", { cls: "sqc-select sqc-author" });
     sel.createEl("option", { text: "any author", value: "" });
     for (const a of this.authorValues) sel.createEl("option", { text: a, value: a });
@@ -345,10 +438,71 @@ export class SquareCallerView extends ItemView {
     };
   }
 
+  /**
+   * Singer select. Blank (the default) matches modules without a `singer`
+   * property; a chosen value matches that exact `singer` value. Values are
+   * discovered from the vault.
+   */
+  private renderSingerSelect(parent: HTMLElement): void {
+    const wrap = parent.createDiv({ cls: "sqc-strip" });
+    this.labelEl(wrap, "Singer");
+    const sel = wrap.createEl("select", { cls: "sqc-select sqc-singer" });
+    // Blank option = require the `singer` property to be absent (non-singer).
+    sel.createEl("option", { text: "no", value: "" });
+    for (const s of this.singerValues) sel.createEl("option", { text: s, value: s });
+    sel.value = this.filters.singer ?? "";
+    sel.onchange = async () => {
+      this.engine.setSinger(sel.value === "" ? null : sel.value);
+      await this.persist();
+      this.render();
+    };
+  }
+
+  /**
+   * Call-text search box. Re-filters on every keystroke; Enter or Esc returns
+   * focus to the grid so the keyboard shortcuts work again (text is kept). An
+   * × button inside the box clears it while it has content.
+   */
+  private renderSearch(parent: HTMLElement): void {
+    const wrap = parent.createDiv({ cls: "sqc-strip" });
+    this.labelEl(wrap, "Search");
+    const box = wrap.createDiv({ cls: "sqc-search-box" });
+    // type=text, not search: avoids the browser's own clear button doubling ours.
+    const input = box.createEl("input", {
+      cls: "sqc-search",
+      type: "text",
+      attr: { placeholder: "e.g. walk*dodge", spellcheck: "false" },
+    });
+    input.value = this.filters.search;
+    input.oninput = async () => {
+      this.engine.setSearch(input.value);
+      await this.persist();
+      this.render();
+    };
+    input.onkeydown = (e) => {
+      if (e.key === "Enter" || e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        (this.containerEl.children[1] as HTMLElement).focus();
+        // Re-render so an empty box drops out of the short filter view.
+        this.render();
+      }
+    };
+    if (this.filters.search !== "") {
+      const clear = box.createEl("button", { cls: "sqc-search-clear", text: "×" });
+      setTooltip(clear, "Clear search");
+      clear.onclick = async () => {
+        this.engine.setSearch("");
+        await this.persist();
+        this.render();
+      };
+    }
+  }
+
   private renderBooleanFilters(parent: HTMLElement): void {
     if (this.booleanKeys.length === 0) return;
     const wrap = parent.createDiv({ cls: "sqc-strip" });
-    wrap.createSpan({ cls: "sqc-strip-label", text: "Flags" });
+    this.labelEl(wrap, "Flags");
     const chips = wrap.createDiv({ cls: "sqc-chips" });
     for (const key of this.booleanKeys) {
       const on = this.filters.booleans[key] === true;
@@ -364,18 +518,25 @@ export class SquareCallerView extends ItemView {
     }
   }
 
-  private renderAutoFollow(parent: HTMLElement): void {
+  private renderAutoFollow(parent: HTMLElement, expanded: boolean): void {
     const wrap = parent.createDiv({ cls: "sqc-strip" });
     const b = wrap.createEl("button", {
       cls: "sqc-chip sqc-autofollow" + (this.filters.autoFollow ? " is-active" : ""),
       text: `Auto-follow: ${this.filters.autoFollow ? "on" : "off"}`,
     });
+    setTooltip(
+      b,
+      "When on, choosing a module sets the start filter to its end so the next options chain on. Shortcut: a",
+    );
     b.onclick = async () => {
       this.engine.toggleAutoFollow();
       await this.persist();
       this.render();
     };
+    // Shuffle is long-view only; the `s` key works in either view.
+    if (!expanded) return;
     const shuf = wrap.createEl("button", { cls: "sqc-chip sqc-shuffle", text: "Shuffle" });
+    setTooltip(shuf, "Randomize the module order so suggestions vary. Shortcut: s");
     shuf.onclick = async () => {
       this.engine.reshuffle();
       this.render();
@@ -475,8 +636,8 @@ export class SquareCallerView extends ItemView {
     titleRow.createSpan({ cls: "sqc-card-title-text", text: m.title });
     const edit = titleRow.createEl("button", {
       cls: "sqc-card-edit",
-      attr: { "aria-label": "Open module in a new tab", title: "Open in new tab" },
     });
+    setTooltip(edit, "Open module in a new tab");
     setIcon(edit, "pencil");
     edit.onclick = async (ev) => {
       ev.stopPropagation(); // don't select/pick the card
@@ -520,18 +681,28 @@ export class SquareCallerView extends ItemView {
   }
 }
 
-/** Keyboard shortcut rows, shown in the help modal. */
-const SHORTCUTS: [string, string][] = [
-  ["↑ / ↓", "Move line highlight in the selected card"],
-  ["← / →", "Page through more next-options"],
-  ["1 / 2  (or [ / ])", "Pick the left / right next option"],
-  ["s", "Re-shuffle the deck"],
-  ["a", "Toggle auto-follow"],
-  ["h / l / p / b / c", "Set START = home / lines / line-partner / box / box-corner"],
-  ["H / L / P / B / C", "Set END = that same formation (shift)"],
-  ["r", "Set end:home filter"],
-  ["?", "Show this help"],
-  ["Esc", "Close this help (or the ✕ in the corner)"],
+/**
+ * Keyboard help rows. Each key renders as its own boxed keycap, so no separator
+ * character (which could be mistaken for a key, like `/`) is needed. A row with
+ * no keys is a note spanning the table.
+ */
+type KeyRow = [keys: string[], desc: string];
+
+const SHORTCUTS: KeyRow[] = [
+  [["↑", "↓"], "Move the line highlight up or down in the selected card"],
+  [["←", "→"], "Page back or forward through more next options"],
+  [["1", "["], "Pick the left next option"],
+  [["2", "]"], "Pick the right next option"],
+  [["s"], "Re-shuffle the deck"],
+  [["a"], "Toggle auto-follow"],
+  [["f"], "Show more or fewer filters (same as the chevron under the ?)"],
+  [["/"], "Jump to the search box (Enter or Esc to leave it)"],
+  [["?"], "Show this help"],
+  [["Esc"], "Close this help (or the ✕ in the corner)"],
+  // Formation group goes last so no unrelated rows sit under its heading.
+  [[], "Formation keys: the first key sets START, its Shift version sets END"],
+  // Generated from the actual bindings so the help can't drift from them.
+  ...FORMATION_KEYS.map(([s, en, formation]): KeyRow => [[s, en], formation]),
 ];
 
 const MOUSE_HELP: [string, string][] = [
@@ -540,6 +711,8 @@ const MOUSE_HELP: [string, string][] = [
   ["Click the ✎ on a title", "Open that module in a new tab"],
   ["Click a flag on a card", "Toggle that flag on/off in the file"],
   ["Start/End chips", "Click to filter; click the active one to clear"],
+  ["Chevron under the ?", "Show all filters, or only Start, End, Auto-follow, and any of Author, Singer, Search that are set"],
+  ["Click × in the search box", "Clear the search"],
 ];
 
 class HelpModal extends Modal {
@@ -556,7 +729,7 @@ class HelpModal extends Modal {
 
     this.renderOverview(contentEl);
     this.renderTable(contentEl, "Mouse", MOUSE_HELP);
-    this.renderTable(contentEl, "Keyboard", SHORTCUTS);
+    this.renderKeyTable(contentEl, "Keyboard", SHORTCUTS);
   }
 
   private renderOverview(parent: HTMLElement): void {
@@ -566,7 +739,8 @@ class HelpModal extends Modal {
       ["Top row", "The module you're calling now plus one alternative."],
       ["Selected card", "The highlighted top card — its calls drive the up/down line highlight."],
       ["Next options", "The bottom two cards: modules matching the current filters. Click one to call it next."],
-      ["Filters", "Narrow the options by start/end formation, level and difficulty range, author, and flags."],
+      ["Filters", "Narrow the options by start/end formation, author, singer, search, level and difficulty range, and flags. The short view hides the rest; the chevron under the ? shows everything."],
+      ["Search", "Type words to find modules whose calls contain all of them, in any order. * matches anything within a line (walk*dodge). Enter or Esc returns to the keyboard shortcuts."],
       ["Auto-follow", "When on, choosing a module automatically sets the start filter to its end, so the next options chain on."],
       ["Shuffle", "Randomizes the module order so suggestions vary; press again any time for fresh picks."],
     ];
@@ -583,6 +757,21 @@ class HelpModal extends Modal {
     for (const [k, desc] of rows) {
       const tr = table.createEl("tr");
       tr.createEl("td", { cls: "sqc-help-key", text: k });
+      tr.createEl("td", { cls: "sqc-help-desc", text: desc });
+    }
+  }
+
+  private renderKeyTable(parent: HTMLElement, title: string, rows: KeyRow[]): void {
+    parent.createEl("h3", { text: title, cls: "sqc-help-section" });
+    const table = parent.createEl("table", { cls: "sqc-help-table" });
+    for (const [keys, desc] of rows) {
+      const tr = table.createEl("tr");
+      if (keys.length === 0) {
+        tr.createEl("td", { cls: "sqc-help-note", text: desc, attr: { colspan: "2" } });
+        continue;
+      }
+      const keyCell = tr.createEl("td", { cls: "sqc-help-key" });
+      for (const k of keys) keyCell.createEl("kbd", { cls: "sqc-kbd", text: k });
       tr.createEl("td", { cls: "sqc-help-desc", text: desc });
     }
   }

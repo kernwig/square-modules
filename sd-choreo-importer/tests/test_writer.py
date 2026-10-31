@@ -67,6 +67,27 @@ def test_booleans_only_when_true():
     assert "unvalidated:" not in md2
 
 
+def test_singer_rendered_after_level_and_omitted_when_unset():
+    rec = ModuleRecord(
+        start="home",
+        end="home",
+        level="ms",
+        singer="corner-progression",
+        calls=["Heads Square Thru 4,", "Swing & Promenade"],
+        folder="Singer-figure",
+    )
+    md = render_markdown(rec)
+    assert "singer: corner-progression\n" in md
+    # `singer` is written immediately after `level`.
+    assert "level: ms\nsinger: corner-progression\n" in md
+
+    rec_break = ModuleRecord(start="home", level="ms", singer="break", calls=["A"])
+    assert "singer: break\n" in render_markdown(rec_break)
+
+    rec_none = ModuleRecord(start="home", level="ms", calls=["A"])
+    assert "singer:" not in render_markdown(rec_none)
+
+
 def test_comment_appended_after_hr():
     rec = ModuleRecord(
         start="home",

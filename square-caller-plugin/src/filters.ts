@@ -5,6 +5,7 @@
 
 import { Module, getStart, getLevel, getDifficulty, asBoolean } from "./model.ts";
 import { LEVEL_ORDER, DIFFICULTY_ORDER, Range, inRange } from "./ordering.ts";
+import { compileQuery, matchesSearch } from "./search.ts";
 
 /**
  * Boolean property filter. `true` = require the property to be true; `false` =
@@ -19,6 +20,13 @@ export interface FilterState {
   end: string | null;
   /** Exact-match author filter, or null for "any author". */
   author: string | null;
+  /**
+   * Singer filter. `null` (the default) matches only modules that do NOT have
+   * the `singer` property; a string matches modules whose `singer` equals it.
+   */
+  singer: string | null;
+  /** Call-text search query (see search.ts); empty = no constraint. */
+  search: string;
   level: Range;
   difficulty: Range;
   /** Per-boolean-key filter; true = require true, false/absent = no filter. */
@@ -32,6 +40,8 @@ export function defaultFilterState(): FilterState {
     start: null,
     end: null,
     author: null,
+    singer: null,
+    search: "",
     level: { min: null, max: null },
     difficulty: { min: null, max: null },
     booleans: {},
@@ -39,9 +49,17 @@ export function defaultFilterState(): FilterState {
   };
 }
 
-/** Does a module satisfy every active filter? */
-export function matches(m: Module, f: FilterState): boolean {
+/**
+ * Does a module satisfy every active filter? `terms` is the pre-compiled search
+ * query; pass it when matching many modules to avoid recompiling per module.
+ */
+export function matches(
+  m: Module,
+  f: FilterState,
+  terms: RegExp[] = compileQuery(f.search),
+): boolean {
   if (f.start !== null && getStart(m) !== f.start) return false;
+  if (!matchesSearch(m, terms)) return false;
 
   if (f.author !== null) {
     const author = m.frontmatter["author"];
@@ -52,6 +70,18 @@ export function matches(m: Module, f: FilterState): boolean {
   if (f.end !== null) {
     const end = m.frontmatter["end"];
     if (typeof end !== "string" || end !== f.end) return false;
+  }
+
+  // Singer filter. Default (null) requires the `singer` property to be absent;
+  // a chosen value requires an exact match.
+  {
+    const singer = m.frontmatter["singer"];
+    const present = singer !== undefined && singer !== null && String(singer) !== "";
+    if (f.singer === null) {
+      if (present) return false;
+    } else {
+      if (!present || String(singer) !== f.singer) return false;
+    }
   }
 
   if (f.level.min !== null || f.level.max !== null) {
@@ -77,5 +107,6 @@ export function matches(m: Module, f: FilterState): boolean {
  * two "next" slots.
  */
 export function candidates(shuffled: Module[], f: FilterState): Module[] {
-  return shuffled.filter((m) => matches(m, f));
+  const terms = compileQuery(f.search);
+  return shuffled.filter((m) => matches(m, f, terms));
 }

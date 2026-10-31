@@ -5,7 +5,7 @@
  * the mutators in response to clicks and keys.
  */
 
-import { Module, getStart, getEnd } from "./model.ts";
+import { Module, getEnd } from "./model.ts";
 import { FilterState, candidates } from "./filters.ts";
 import { shuffle, mulberry32, randomSeed } from "./shuffle.ts";
 
@@ -127,12 +127,6 @@ export class Engine {
     if (!this.filters.autoFollow) return;
     const end = getEnd(m);
     if (end !== null) this.filters.start = end;
-
-    // Special rule: if the end:home filter is on and the newly selected module
-    // starts at home, clear the end:home filter.
-    if (this.filters.end === "home" && getStart(m) === "home") {
-      this.filters.end = null;
-    }
   }
 
   /**
@@ -147,6 +141,18 @@ export class Engine {
 
   setEnd(value: string | null): void {
     this.filters.end = this.filters.end === value ? null : value;
+    this.nextPage = 0;
+  }
+
+  /** Set the singer filter directly (null = require the property absent). */
+  setSinger(value: string | null): void {
+    this.filters.singer = value;
+    this.nextPage = 0;
+  }
+
+  /** Set the call-text search query (empty string = no search). */
+  setSearch(query: string): void {
+    this.filters.search = query;
     this.nextPage = 0;
   }
 

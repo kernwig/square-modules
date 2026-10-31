@@ -22,14 +22,15 @@ Square-Modules/<Level>/<Formation-Folder>/<module>.md
 | `unvalidated` | boolean | `true` | no | Set `true` when the source marks the sequence `*** not validated ***`. Only present when `true`. |
 | `beats` | number | integer | no | Beat/step count (e.g. for singing calls). Auto-extracted from the source comment when parseable. **Omit the property entirely when unset — never write an empty or null `beats`.** |
 | `level` | string | `ms`, `plus`, `a1`, `a2`, `c1`, `c2`, `c3a`, `c3b`, `c4` | yes | `ms` = Mainstream; other levels are the lowercase of the level name. |
+| `singer` | string | `corner-progression`, `rhlady-progression`, `break` | no | Singing-call kind. Set on singing-call modules: `corner-progression` / `rhlady-progression` for the two figure types (both filed under `Singer-figure`), `break` for breaks (`Singer-break`). Omitted for non-singing modules. |
 | `author` | string | — | no | Full caller name. Omit when unknown. |
 | `source` | string | `ceder-<RecordId>` for ceder imports | no | Provenance / dedup key. Only ceder uses the `ceder-<id>` scheme; future sources may differ. |
 
 ### Omit-when-empty rule
 
 Optional properties (`end`, `difficulty`, `trick`, `unvalidated`, `beats`,
-`author`, `source`) are left out of the frontmatter entirely when they have no
-value. Booleans (`trick`, `unvalidated`) appear only when `true`.
+`author`, `source`, `singer`) are left out of the frontmatter entirely when they
+have no value. Booleans (`trick`, `unvalidated`) appear only when `true`.
 
 ## Base views
 

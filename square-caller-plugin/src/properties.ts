@@ -12,6 +12,8 @@ export const RESERVED_KEYS = new Set([
   "end",
   "level",
   "difficulty",
+  "author",
+  "singer",
 ]);
 
 export interface DiscoveredProperties {

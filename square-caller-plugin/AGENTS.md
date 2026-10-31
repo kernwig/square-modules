@@ -38,13 +38,21 @@ the code before changing it; don't treat this document as a spec.
   `box-corner` ⊂ box) are never auto-follow targets because no `end` equals
   them; they're manual entry points only. Do not loosen this to fuzzy matching.
 - **Auto-follow:** when on, selecting a module sets the start filter to its
-  `end` so options keep chaining. (Plus one special case, see the code.)
+  `end` so options keep chaining. It changes only the start filter; every other
+  filter (including end) stays as the caller set it.
 - **Shuffle once, iterate in order.** The deck is shuffled on load / on demand;
   filtering walks that fixed order. This keeps suggestions random without
   per-display RNG; occasional repeats are acceptable.
-- **Filters** (start/end/author exact, level/difficulty ranges, flags) are the
-  real selector of "next" candidates. They persist across sessions in
-  `data.json`.
+- **Filters** (start/end/author exact, level/difficulty ranges, flags, a
+  `singer` select, and a call-text search) are the real selector of "next"
+  candidates. They persist across sessions in `data.json`. The `singer` filter
+  defaults to "no", which matches only modules that have no `singer` property.
+  Search ANDs whitespace-separated terms, `*` is a within-line wildcard, and
+  only call lines (before the `---` rule) are searched.
+- **Short vs long filter bar.** The short view always shows Start, End, and
+  Auto-follow, plus Author/Singer/Search only while each holds a value (Search
+  also while focused, so `/` can reach it). Everything else is long-view only.
+  The choice persists as `filtersExpanded` in settings (not in `FilterState`).
 - **2×2 grid:** top row is what you're calling plus an alternative; bottom row
   is the two next candidates. Behavior of promotion/selection lives in the
   engine — read it before changing.

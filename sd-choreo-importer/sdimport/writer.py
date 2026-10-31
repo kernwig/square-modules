@@ -83,6 +83,8 @@ def render_frontmatter(record: ModuleRecord) -> str:
     if record.beats is not None:
         lines.append(f"beats: {int(record.beats)}")
     lines.append(f"level: {_yaml_scalar(record.level)}")
+    if record.singer:
+        lines.append(f"singer: {_yaml_scalar(record.singer)}")
     if record.author:
         lines.append(f"author: {_yaml_scalar(record.author)}")
     if record.source:

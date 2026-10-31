@@ -8,5 +8,5 @@ the authoritative CALLERLAB lists effective 2026-09-01, then:
   * or flags modules whose detected level disagrees with their set ``level`` for
     the user to confirm.
 
-Standalone tool; independent of tools/sd-choreo-importer.
+Standalone tool; independent of square-modules/sd-choreo-importer.
 """

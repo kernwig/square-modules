@@ -5,9 +5,9 @@ Guidance for an agent maintaining this tool in a fresh session. Read
 
 ## What this is
 
-A standalone Python tool (`tools/level-classifier/`) that classifies the dance
+A standalone Python tool (`square-modules/level-classifier/`) that classifies the dance
 level (MS/Plus/A1/A2) of Obsidian choreography modules and reconciles their
-`level` frontmatter + folder. Independent of `tools/sd-choreo-importer`.
+`level` frontmatter + folder. Independent of `square-modules/sd-choreo-importer`.
 
 ## Project facts
 

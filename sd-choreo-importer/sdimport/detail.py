@@ -157,4 +157,5 @@ def parse_detail(
         comment=comment,
         folder=mapping.folder,
         filename_prefix=mapping.prefix,
+        singer=mapping.singer,
     )

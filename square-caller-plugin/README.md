@@ -21,8 +21,12 @@ Obsidian's metadata cache — there is no second copy of the data.
 - **Auto-follow (toggle).** When on, selecting a module moves the start filter
   to that module's `end` so options keep chaining automatically.
 - **Discovered, filterable properties.** Start/end formations, authors, level
-  and difficulty ranges, and boolean "flag" properties (e.g. favorite, hnh) are
-  all discovered from the vault at load — nothing is hard-coded.
+  and difficulty ranges, a `singer` select, and boolean "flag" properties (e.g.
+  favorite, hnh) are all discovered from the vault at load — nothing is
+  hard-coded. The `singer` filter defaults to "no", which matches modules that
+  have no `singer` property.
+- **Call search.** Type words to find modules whose calls contain all of them
+  (any order); `*` matches anything within a line, e.g. `walk*dodge`.
 - **Keyboard-first.** Shuffle, formation selection, option paging, and
   line-by-line highlight scrolling all have shortcuts. Press `?` in the view (or
   click the `?` button) for the full list.

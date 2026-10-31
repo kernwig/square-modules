@@ -66,7 +66,7 @@ Rule of thumb: left side of `➔` → start; right side → end; "Resolve" as th
 - Existing module `.md` files (7 samples) confirm the schema and body style. New requirement: trim trailing spaces from body lines.
 
 ## Proposed Solution
-- **Language:** Python 3 with `requests` + `beautifulsoup4` (pinned versions) for robust parsing of ceder's non-semantic markup. Script under `tools/sd-choreo-importer/` in the repo, writing into `BDP-Obsidian/Square-Modules/`.
+- **Language:** Python 3 with `requests` + `beautifulsoup4` (pinned versions) for robust parsing of ceder's non-semantic markup. Script under `square-modules/sd-choreo-importer/`, writing into `BDP-Obsidian/Square-Modules/`.
 - **Architecture (pluggable):**
   - `ModuleRecord` dataclass = canonical schema (frontmatter fields + body + comment).
   - `writer.py` — serialize a `ModuleRecord` to an Obsidian `.md`; resolve `<Level>/<Folder>/<name>.md`; dedup by scanning existing `source:` values; generate filenames.
