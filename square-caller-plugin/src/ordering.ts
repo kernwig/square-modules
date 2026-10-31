@@ -1,7 +1,31 @@
 /** Ordering for the range filters (level, difficulty). */
 
-export const LEVEL_ORDER = ["ms", "plus", "a1", "a2", "c1", "c2", "c3", "c4"];
-export const DIFFICULTY_ORDER = ["easy", "medium", "hard"];
+/** Level for a module whose `level` is missing or not a recognized level. */
+export const UNKNOWN_LEVEL = "unk";
+/** Difficulty for a module whose `difficulty` is unset or not recognized. */
+export const UNKNOWN_DIFFICULTY = "unknown";
+
+// The unknown value sits last so it can be included or excluded by the range
+// like any other value.
+export const LEVEL_ORDER = ["ms", "plus", "a1", "a2", "c1", "c2", "c3", "c4", UNKNOWN_LEVEL];
+export const DIFFICULTY_ORDER = ["easy", "medium", "hard", UNKNOWN_DIFFICULTY];
+
+/**
+ * Map a raw value onto its ordering: a recognized value comes back as the
+ * ordering's own (lowercase) spelling; a missing or unrecognized value becomes
+ * the last entry of the ordering (the "unknown" value).
+ */
+export function normalizeTo(order: string[], value: string | null): string {
+  const i = value === null ? -1 : order.indexOf(value.trim().toLowerCase());
+  return i === -1 ? order[order.length - 1] : order[i];
+}
+
+export function normalizeLevel(value: string | null): string {
+  return normalizeTo(LEVEL_ORDER, value);
+}
+export function normalizeDifficulty(value: string | null): string {
+  return normalizeTo(DIFFICULTY_ORDER, value);
+}
 
 /** Preferred display order for the known single-word formations. Anything not
  *  listed is appended after, with non-hyphenated values before hyphenated ones

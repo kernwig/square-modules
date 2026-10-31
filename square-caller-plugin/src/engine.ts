@@ -50,7 +50,7 @@ export class Engine {
     this.top = this.top.map((m) =>
       m ? all.find((x) => x.path === m.path) ?? null : null,
     );
-    this.nextPage = 0;
+    // Page is kept (and clamped on use) so a file edit doesn't jump to page 1.
   }
 
   reshuffle(): void {
@@ -67,6 +67,7 @@ export class Engine {
 
   snapshot(): GridSnapshot {
     const cands = this.nextCandidates();
+    this.clampPage(cands.length);
     const start = this.nextPage * 2;
     return {
       top: [this.top[0], this.top[1]],
@@ -81,9 +82,20 @@ export class Engine {
     return this.selectedIndex >= 0 ? this.top[this.selectedIndex] : null;
   }
 
+  /**
+   * Keep the page inside the current candidate list. Filters can change from
+   * many places (selects, flags, file edits), so the page is clamped wherever
+   * it is read rather than reset at each of those places.
+   */
+  private clampPage(total: number): void {
+    const last = Math.max(0, Math.ceil(total / 2) - 1);
+    if (this.nextPage > last) this.nextPage = last;
+  }
+
   /** Page the next row by +/-1 page (2 options). Clamps and wraps at ends. */
   pageNext(delta: number): void {
     const total = this.nextCandidates().length;
+    this.clampPage(total);
     const pages = Math.max(1, Math.ceil(total / 2));
     this.nextPage = ((this.nextPage + delta) % pages + pages) % pages;
   }

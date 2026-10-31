@@ -64,6 +64,12 @@ the code before changing it; don't treat this document as a spec.
   source of truth for file contents.
 - Flag filters are a simple on/off (on = require true), not tri-state.
 - Level/difficulty ranges default to the full discovered span, not "any."
+  A missing or unrecognized level counts as `unk`, a missing or unrecognized
+  difficulty as `unknown`; each sits last in its ordering and is filtered by the
+  range like any other value.
+- The module list follows vault edits live (metadata `changed`, vault
+  `delete`/`rename`), updated per file and batched. Search filtering is
+  debounced so it runs when typing pauses.
 - Module body may contain a `---` rule followed by freeform comments; these are
   rendered (the highlighter can scroll through them) but the rule is skipped by
   the highlighter, and blank lines are not kept around it.

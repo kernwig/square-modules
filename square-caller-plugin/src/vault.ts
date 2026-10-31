@@ -14,18 +14,26 @@ export { extractBody, isModule };
 export const MODULES_ROOT = "Square-Modules";
 
 export async function loadModules(app: App, root = MODULES_ROOT): Promise<Module[]> {
-  const files = app.vault.getMarkdownFiles().filter((f) => inRoot(f, root));
+  const files = app.vault.getMarkdownFiles().filter((f) => isModuleFile(f, root));
   const out: Module[] = [];
   for (const f of files) {
-    if (f.basename.startsWith("_")) continue; // skip _Template.md etc.
     const mod = await readModule(app, f);
     if (mod && isModule(mod)) out.push(mod);
   }
   return out;
 }
 
-function inRoot(f: TFile, root: string): boolean {
-  return f.path === root || f.path.startsWith(root + "/");
+/**
+ * Could this file be a module? A markdown file under the modules root whose
+ * name doesn't start with `_` (that skips _Template.md etc.). Whether it really
+ * is one depends on its frontmatter (see `isModule`).
+ */
+export function isModuleFile(f: TFile, root = MODULES_ROOT): boolean {
+  return f.extension === "md" && inRoot(f.path, root) && !f.basename.startsWith("_");
+}
+
+export function inRoot(path: string, root: string): boolean {
+  return path === root || path.startsWith(root + "/");
 }
 
 export async function readModule(app: App, file: TFile): Promise<Module | null> {

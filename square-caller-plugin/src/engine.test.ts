@@ -166,3 +166,38 @@ test("paging wraps around candidate pages", () => {
   e.pageNext(1);
   assert.equal(e.snapshot().nextPage, 0, "wrap back to first");
 });
+
+test("page is clamped when a filter change shrinks the candidate list", () => {
+  const f = defaultFilterState(); // all 5 match, 3 pages
+  const e = new Engine(deck, f, 1);
+  e.pageNext(-1); // last page (index 2)
+  f.start = "lines"; // set directly, as the view's selects do: 2 matches, 1 page
+  const snap = e.snapshot();
+  assert.equal(snap.nextPage, 0);
+  assert.equal(snap.next.filter(Boolean).length, 2, "both cards filled, not 'no match'");
+});
+
+test("missing difficulty counts as 'unknown' and is kept by a range that includes it", () => {
+  const mods: Module[] = [
+    mod("set", { start: "home", end: "home", level: "ms", difficulty: "easy" }),
+    mod("unset", { start: "home", end: "home", level: "ms" }),
+  ];
+  const f = defaultFilterState();
+  f.difficulty = { min: "easy", max: "unknown" };
+  let paths = new Engine(mods, f, 1).snapshot().next.filter(Boolean).map((m) => (m as Module).path);
+  assert.deepEqual(paths.sort(), ["set", "unset"]);
+  f.difficulty = { min: "easy", max: "hard" };
+  paths = new Engine(mods, f, 1).snapshot().next.filter(Boolean).map((m) => (m as Module).path);
+  assert.deepEqual(paths, ["set"]);
+});
+
+test("unrecognized level counts as 'unk'", () => {
+  const mods: Module[] = [
+    mod("ms", { start: "home", end: "home", level: "ms" }),
+    mod("odd", { start: "home", end: "home", level: "basic" }),
+  ];
+  const f = defaultFilterState();
+  f.level = { min: "unk", max: "unk" };
+  const paths = new Engine(mods, f, 1).snapshot().next.filter(Boolean).map((m) => (m as Module).path);
+  assert.deepEqual(paths, ["odd"]);
+});

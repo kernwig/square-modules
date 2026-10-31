@@ -4,7 +4,14 @@
  */
 
 import { Module, getStart, getLevel, getDifficulty, asBoolean } from "./model.ts";
-import { LEVEL_ORDER, DIFFICULTY_ORDER, Range, inRange } from "./ordering.ts";
+import {
+  LEVEL_ORDER,
+  DIFFICULTY_ORDER,
+  Range,
+  inRange,
+  normalizeLevel,
+  normalizeDifficulty,
+} from "./ordering.ts";
 import { compileQuery, matchesSearch } from "./search.ts";
 
 /**
@@ -84,11 +91,15 @@ export function matches(
     }
   }
 
+  // A missing or unrecognized level/difficulty counts as the "unknown" value at
+  // the end of its ordering, so it is filtered by the range like any other.
   if (f.level.min !== null || f.level.max !== null) {
-    if (!inRange(LEVEL_ORDER, getLevel(m), f.level)) return false;
+    if (!inRange(LEVEL_ORDER, normalizeLevel(getLevel(m)), f.level)) return false;
   }
   if (f.difficulty.min !== null || f.difficulty.max !== null) {
-    if (!inRange(DIFFICULTY_ORDER, getDifficulty(m), f.difficulty)) return false;
+    if (!inRange(DIFFICULTY_ORDER, normalizeDifficulty(getDifficulty(m)), f.difficulty)) {
+      return false;
+    }
   }
 
   for (const [key, want] of Object.entries(f.booleans)) {

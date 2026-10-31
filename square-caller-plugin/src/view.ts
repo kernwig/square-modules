@@ -4,16 +4,40 @@
  * vault; nothing about the formation/boolean vocabulary is hard-coded.
  */
 
-import { ItemView, WorkspaceLeaf, Notice, Modal, App, TFile, setIcon, setTooltip } from "obsidian";
-import { Module, asBoolean, getEnd } from "./model.ts";
+import {
+  ItemView,
+  WorkspaceLeaf,
+  Notice,
+  Modal,
+  App,
+  TFile,
+  TAbstractFile,
+  setIcon,
+  setTooltip,
+} from "obsidian";
+import { Module, asBoolean, getEnd, getLevel, getDifficulty, isModule } from "./model.ts";
 import { Engine } from "./engine.ts";
 import { FilterState } from "./filters.ts";
 import { discoverProperties, distinctValues } from "./properties.ts";
-import { LEVEL_ORDER, DIFFICULTY_ORDER, orderValues, sortFormations } from "./ordering.ts";
-import { loadModules, toggleBoolean } from "./vault.ts";
+import {
+  LEVEL_ORDER,
+  DIFFICULTY_ORDER,
+  orderValues,
+  sortFormations,
+  normalizeLevel,
+  normalizeDifficulty,
+} from "./ordering.ts";
+import { loadModules, readModule, isModuleFile, toggleBoolean } from "./vault.ts";
 import type SquareCallerPlugin from "./main.ts";
 
 export const VIEW_TYPE = "square-caller-view";
+
+/** Search waits for a pause in typing this long before filtering... */
+const SEARCH_DEBOUNCE_MS = 300;
+/** ...but never longer than this after the first keystroke of a burst. */
+const SEARCH_MAX_WAIT_MS = 1000;
+/** File edits are batched (e.g. a sync touching many files) into one refresh. */
+const FILE_CHANGE_BATCH_MS = 200;
 
 /**
  * Formation hotkeys: [start key, end key, formation]. The start key sets the
@@ -67,6 +91,14 @@ export class SquareCallerView extends ItemView {
   private lastHighlightDir = 1;
   /** Set by the `/` shortcut: next render shows and focuses the search box. */
   private focusSearchOnRender = false;
+  /** Search text typed but not yet applied (waiting on the debounce). */
+  private pendingSearch: string | null = null;
+  private searchTimer: number | null = null;
+  private searchBurstStart = 0;
+  /** Pending batched refresh after file changes. */
+  private applyTimer: number | null = null;
+  /** False until the first full load; file events before that are ignored. */
+  private loaded = false;
 
   constructor(leaf: WorkspaceLeaf, private plugin: SquareCallerPlugin) {
     super(leaf);
@@ -83,7 +115,6 @@ export class SquareCallerView extends ItemView {
   }
 
   async onOpen(): Promise<void> {
-    await this.reloadModules();
     // The view's content element must be focusable for keydown to fire on it.
     const root = this.containerEl.children[1] as HTMLElement;
     root.setAttribute("tabindex", "0");
@@ -91,19 +122,88 @@ export class SquareCallerView extends ItemView {
     this.registerDomEvent(root, "keydown", (e) => this.onKey(e));
     // Focus so keys work without a click; also refocus on any click in the view.
     this.registerDomEvent(root, "mousedown", () => root.focus());
-    window.setTimeout(() => root.focus(), 0);
+
+    // Keep the module list in step with the vault. "changed" fires once a
+    // file's metadata is (re)parsed, which also covers files that weren't
+    // indexed yet when the view first loaded at startup.
+    this.registerEvent(
+      this.app.metadataCache.on("changed", (file) => void this.onFileChanged(file)),
+    );
+    this.registerEvent(this.app.vault.on("delete", (file) => this.onFileRemoved(file.path)));
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        this.onFileRemoved(oldPath);
+        void this.onFileChanged(file);
+      }),
+    );
+
+    // When Obsidian restores this tab at launch, wait for the workspace to
+    // finish loading before reading the vault. Runs at once if already ready.
+    this.app.workspace.onLayoutReady(async () => {
+      await this.reloadModules();
+      root.focus();
+    });
   }
 
   async onClose(): Promise<void> {
-    // nothing to tear down
+    if (this.applyTimer !== null) window.clearTimeout(this.applyTimer);
+    this.applyTimer = null;
+    // Keep any search typed in the last moment before closing.
+    if (this.pendingSearch !== null && this.engine) {
+      this.clearSearchTimer();
+      this.engine.setSearch(this.pendingSearch);
+      this.pendingSearch = null;
+      await this.persist();
+    }
   }
 
   get filters(): FilterState {
     return this.plugin.settings.filters;
   }
 
+  /** Full (re)load of every module from the vault. */
   async reloadModules(): Promise<void> {
     this.modules = await loadModules(this.app, this.plugin.settings.modulesRoot);
+    this.loaded = true;
+    this.applyModules();
+  }
+
+  /** Re-read one changed file and update the module list in place. */
+  private async onFileChanged(file: TAbstractFile): Promise<void> {
+    if (!this.loaded || !(file instanceof TFile)) return;
+    if (!isModuleFile(file, this.plugin.settings.modulesRoot)) return;
+    const mod = await readModule(this.app, file);
+    const i = this.modules.findIndex((m) => m.path === file.path);
+    if (mod && isModule(mod)) {
+      // Replacing in place keeps the shuffle order unchanged for edits.
+      if (i >= 0) this.modules[i] = mod;
+      else this.modules.push(mod);
+    } else if (i >= 0) {
+      this.modules.splice(i, 1); // no longer has the required properties
+    } else {
+      return;
+    }
+    this.scheduleApply();
+  }
+
+  private onFileRemoved(path: string): void {
+    if (!this.loaded) return;
+    const i = this.modules.findIndex((m) => m.path === path);
+    if (i < 0) return;
+    this.modules.splice(i, 1);
+    this.scheduleApply();
+  }
+
+  private scheduleApply(): void {
+    if (this.applyTimer !== null) window.clearTimeout(this.applyTimer);
+    this.applyTimer = window.setTimeout(() => {
+      this.applyTimer = null;
+      this.applyModules();
+    }, FILE_CHANGE_BATCH_MS);
+  }
+
+  /** Rebuild everything derived from the module list, then render. */
+  private applyModules(): void {
     const props = discoverProperties(this.modules);
     this.startValues = sortFormations(distinctValues(this.modules, "start"));
     this.endValues = sortFormations(distinctValues(this.modules, "end"));
@@ -144,6 +244,9 @@ export class SquareCallerView extends ItemView {
     if (target && (target.tagName === "SELECT" || target.tagName === "INPUT")) {
       return;
     }
+    // Leave Cmd/Ctrl/Alt combinations (Cmd+P, Cmd+W, ...) to Obsidian.
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (!this.engine) return; // modules not loaded yet
     const raw = e.key; // preserve case to distinguish shift (end) from start
     const key = raw.toLowerCase();
     let handled = true;
@@ -324,7 +427,7 @@ export class SquareCallerView extends ItemView {
     // In the short view, each of these still shows while it holds a value.
     if (expanded || this.filters.author !== null) this.renderAuthorSelect(bar);
     if (expanded || this.filters.singer !== null) this.renderSingerSelect(bar);
-    if (expanded || this.filters.search !== "" || searchFocused) this.renderSearch(bar);
+    if (expanded || this.searchText() !== "" || searchFocused) this.renderSearch(bar);
 
     // Long view only.
     if (expanded) {
@@ -356,10 +459,16 @@ export class SquareCallerView extends ItemView {
   }
 
   private levelValues(): string[] {
-    return orderValues(LEVEL_ORDER, distinctValues(this.modules, "level"));
+    return orderValues(
+      LEVEL_ORDER,
+      this.modules.map((m) => normalizeLevel(getLevel(m))),
+    );
   }
   private difficultyValues(): string[] {
-    return orderValues(DIFFICULTY_ORDER, distinctValues(this.modules, "difficulty"));
+    return orderValues(
+      DIFFICULTY_ORDER,
+      this.modules.map((m) => normalizeDifficulty(getDifficulty(m))),
+    );
   }
 
   /** Default an unset range to the full span of available values. */
@@ -459,9 +568,10 @@ export class SquareCallerView extends ItemView {
   }
 
   /**
-   * Call-text search box. Re-filters on every keystroke; Enter or Esc returns
-   * focus to the grid so the keyboard shortcuts work again (text is kept). An
-   * × button inside the box clears it while it has content.
+   * Call-text search box. Filtering waits for a pause in typing (see
+   * `queueSearch`); Enter or Esc applies it at once and returns focus to the
+   * grid so the keyboard shortcuts work again (text is kept). An × button
+   * inside the box clears it while it has content.
    */
   private renderSearch(parent: HTMLElement): void {
     const wrap = parent.createDiv({ cls: "sqc-strip" });
@@ -473,30 +583,67 @@ export class SquareCallerView extends ItemView {
       type: "text",
       attr: { placeholder: "e.g. walk*dodge", spellcheck: "false" },
     });
-    input.value = this.filters.search;
-    input.oninput = async () => {
-      this.engine.setSearch(input.value);
-      await this.persist();
-      this.render();
-    };
-    input.onkeydown = (e) => {
+    // Show typed-but-unapplied text so a render mid-typing doesn't lose it.
+    input.value = this.searchText();
+    input.oninput = () => this.queueSearch(input.value);
+    input.onkeydown = async (e) => {
       if (e.key === "Enter" || e.key === "Escape") {
         e.preventDefault();
         e.stopPropagation();
         (this.containerEl.children[1] as HTMLElement).focus();
+        await this.flushSearch();
         // Re-render so an empty box drops out of the short filter view.
         this.render();
       }
     };
-    if (this.filters.search !== "") {
+    if (this.searchText() !== "") {
       const clear = box.createEl("button", { cls: "sqc-search-clear", text: "×" });
       setTooltip(clear, "Clear search");
       clear.onclick = async () => {
+        this.clearSearchTimer();
+        this.pendingSearch = null;
         this.engine.setSearch("");
         await this.persist();
         this.render();
       };
     }
+  }
+
+  /** The search box text: pending (still being typed) or applied. */
+  private searchText(): string {
+    return this.pendingSearch ?? this.filters.search;
+  }
+
+  /**
+   * Apply the search once typing pauses for SEARCH_DEBOUNCE_MS, and in any case
+   * no later than SEARCH_MAX_WAIT_MS after the first keystroke of the burst.
+   */
+  private queueSearch(value: string): void {
+    this.pendingSearch = value;
+    const now = Date.now();
+    if (this.searchTimer === null) this.searchBurstStart = now;
+    else window.clearTimeout(this.searchTimer);
+    const untilMax = this.searchBurstStart + SEARCH_MAX_WAIT_MS - now;
+    const wait = Math.max(0, Math.min(SEARCH_DEBOUNCE_MS, untilMax));
+    this.searchTimer = window.setTimeout(() => void this.flushSearch(), wait);
+  }
+
+  /** Apply any pending search now. */
+  private async flushSearch(): Promise<void> {
+    this.clearSearchTimer();
+    if (this.pendingSearch === null) return;
+    const value = this.pendingSearch;
+    this.pendingSearch = null;
+    if (value !== this.filters.search) {
+      this.engine.setSearch(value);
+      await this.persist();
+    }
+    this.render();
+  }
+
+  private clearSearchTimer(): void {
+    if (this.searchTimer !== null) window.clearTimeout(this.searchTimer);
+    this.searchTimer = null;
   }
 
   private renderBooleanFilters(parent: HTMLElement): void {
@@ -589,7 +736,7 @@ export class SquareCallerView extends ItemView {
       const highlighted = isSelected && isTop && i === this.highlightLine;
       let cls = "sqc-line";
       if (highlighted) cls += " is-highlight";
-      if (line.trim() === "---" || line.trim() === "- - -") cls += " sqc-line-rule";
+      if (line.trim() === "---") cls += " sqc-line-rule";
       if (line.trim() === "") cls += " sqc-line-blank";
       const el = body.createDiv({ cls });
       // Empty lines still need height so the highlighter can rest on them.
@@ -617,7 +764,7 @@ export class SquareCallerView extends ItemView {
     const body = card.createDiv({ cls: "sqc-card-body" });
     for (const line of m.lines) {
       let cls = "sqc-line";
-      if (line.trim() === "---" || line.trim() === "- - -") cls += " sqc-line-rule";
+      if (line.trim() === "---") cls += " sqc-line-rule";
       if (line.trim() === "") cls += " sqc-line-blank";
       const el = body.createDiv({ cls });
       el.setText(line === "" ? "\u00A0" : line);
@@ -700,7 +847,10 @@ const SHORTCUTS: KeyRow[] = [
   [["?"], "Show this help"],
   [["Esc"], "Close this help (or the ✕ in the corner)"],
   // Formation group goes last so no unrelated rows sit under its heading.
-  [[], "Formation keys: the first key sets START, its Shift version sets END"],
+  [
+    [],
+    "Formation keys: the first key toggles the START filter, its Shift version toggles END. Turning a formation on turns off any other one in that filter.",
+  ],
   // Generated from the actual bindings so the help can't drift from them.
   ...FORMATION_KEYS.map(([s, en, formation]): KeyRow => [[s, en], formation]),
 ];

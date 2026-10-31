@@ -1,6 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { sortFormations } from "./ordering.ts";
+import { sortFormations, normalizeLevel, normalizeDifficulty } from "./ordering.ts";
+
+test("normalize maps missing/unrecognized values to the unknown entry", () => {
+  assert.equal(normalizeLevel("MS"), "ms");
+  assert.equal(normalizeLevel("basic"), "unk");
+  assert.equal(normalizeLevel(null), "unk");
+  assert.equal(normalizeDifficulty("Hard"), "hard");
+  assert.equal(normalizeDifficulty(null), "unknown");
+  assert.equal(normalizeDifficulty("tricky"), "unknown");
+});
 
 test("formations sort in preferred order, unknowns appended", () => {
   const input = ["waves", "box-corner", "home", "8chain", "box", "lines", "line-partner"];
